@@ -1,0 +1,33 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  firstName       String
+  lastName        String
+  password        String    @db.VarChar(255)
+  isVerified Boolean @default(false) @map("is_verified")
+  username        String    @unique @db.VarChar(255)
+  accountCreated  DateTime  @default(now()) @map("account_created")
+  accountUpdated  DateTime  @updatedAt @map("account_updated")
+  @@map("users")
+}
+
+model MailLog {
+  id        Int      @id @default(autoincrement())
+  email     String   @db.VarChar(255)
+  userId   String   @db.VarChar(255)
+  verificationLink   String   @db.VarChar(1000)
+  sentAt    DateTime @default(now())
+  status    String   @db.VarChar(50) // Example values: 'SUCCESS', 'FAILURE'
+  errorMessage String? @db.VarChar(255) // Nullable field for storing error messages, if any
+}

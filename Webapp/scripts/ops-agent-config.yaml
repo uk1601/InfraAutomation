@@ -1,0 +1,22 @@
+logging:
+  receivers:
+    application_log:
+      type: files
+      include_paths:
+        - "/var/log/myapp/application.log"  # Ensure this path matches where your Winston logger writes logs
+  processors:
+    parse_json:
+      type: parse_json
+      field: message
+      # time_key: timestamp
+      # time_format: "YYYY-MM-DDTHH:mm:ssZ"  # Adjust if your timestamp format differs
+    move_severity:
+      type: modify_fields
+      fields:
+        severity:
+          move_from: jsonPayload.level
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: [application_log]
+        processors: [parse_json, move_severity]

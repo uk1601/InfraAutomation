@@ -1,0 +1,110 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [closed]
+
+jobs:
+  
+  build-and-deploy:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+      
+    - name: Install MySQL Server
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mysql-server
+        sudo service mysql start
+
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18' # or another version of Node.js you're using
+
+    - name: Install dependencies
+      run: |
+        ls -al
+        npm ci
+    
+    - name: Setup Prisma
+      run: npx prisma generate      
+    
+    - name: Setup Databse Env
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: |          
+        npx prisma db push
+
+    - name: Set up Prisma
+      run: npx prisma generate
+
+    - name: Set up Database
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: npx prisma db push
+
+    - name: Run integration tests
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: npm test
+
+    - name: Build Application Artifact
+      run: |
+        npm run build
+    
+    - name: Install Zip
+      run: sudo apt-get install -y zip
+      
+    - name: Zip application files
+      run: sudo zip -r webapp.zip . -x 'node_modules/*' '.git/*'
+  
+    - name: Authenticate to Google Cloud
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: ${{ secrets.saKey }}      
+
+    - name: Set up Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+      with:
+        version: '>= 363.0.0'
+    - name: "Use gcloud CLI"
+      run: |          
+          gcloud info        
+
+    - name: Create Packer Variables File
+      run: |
+        echo "project_id    = \"${{ secrets.GCP_PROJECT_ID }}\"" > ./packer/variables.pkrvars.hcl
+        echo "source_image  = \"${{ secrets.SOURCE_IMAGE }}\"" >> ./packer/variables.pkrvars.hcl
+        echo "zone          = \"${{ secrets.ZONE }}\"" >> ./packer/variables.pkrvars.hcl
+        echo "ssh_username  = \"${{ secrets.SSH_USERNAME }}\"" >> ./packer/variables.pkrvars.hcl 
+        echo "database_url  = \"${{ secrets.DATABASE_URL }}\"" >> ./packer/variables.pkrvars.hcl
+        cat ./packer/variables.pkrvars.hcl        
+    - name: Install Packer
+      uses: hashicorp/setup-packer@main
+      id: setup
+      with:
+        version: "latest" 
+    - name: Initialize Packer
+      run: packer init ./packer/
+    - name: Run packer fmt        
+      run: | 
+        packer -v
+        ls -al
+        ls -al ./packer/
+        packer fmt -check ./packer/builld-image.pkr.hcl 
+      continue-on-error: false
+
+    - name: Run packer validate
+      run: packer validate -var-file=./packer/variables.pkrvars.hcl ./packer/
+
+    - name: Build Custom Image with Packer
+      run: |
+        # Add your Packer build commands here
+        packer build -var-file=./packer/variables.pkrvars.hcl ./packer/

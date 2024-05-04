@@ -1,0 +1,74 @@
+name: Packer CI
+
+on: 
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  packer-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@main
+        id: setup
+        with:
+          version: "latest"
+      - name: Create Packer Variables File
+        run: |
+          echo "project_id    = \"${{ secrets.GCP_PROJECT_ID }}\"" > ./packer/variables.pkrvars.hcl
+          echo "source_image  = \"${{ secrets.SOURCE_IMAGE }}\"" >> ./packer/variables.pkrvars.hcl
+          echo "zone          = \"${{ secrets.ZONE }}\"" >> ./packer/variables.pkrvars.hcl
+          echo "ssh_username  = \"${{ secrets.SSH_USERNAME }}\"" >> ./packer/variables.pkrvars.hcl 
+          cat ./packer/variables.pkrvars.hcl
+      
+      - name: Install Zip
+        run: sudo apt-get install -y zip
+          
+      - name: Zip application files
+        run: |
+          pwd
+          sudo zip -r webapp.zip . -x 'node_modules/*' '.git/*'
+          ls -al
+          
+    
+      # - name: Upload webapp.zip as an artifact
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: webapp
+      #     path: webapp.zip
+      
+      
+      # - name: Download webapp.zip artifact
+      #   uses: actions/download-artifact@v3
+      #   with:
+      #     name: webapp
+      # - name: Adjust permissions and move webapp.zip
+      #   run: | 
+      #     chmod 644 webapp/webapp.zip
+      #     mv webapp/webapp.zip .
+        
+      
+      # - name: Move webapp.zip to the project root
+      #   run: | 
+      #     ls -al
+      #     mv webapp/webapp.zip .
+  
+          
+
+      - name: Initialize Packer
+        run: packer init ./packer/
+      - name: Run packer fmt        
+        run: | 
+          packer -v
+          ls -al
+          ls -al ./packer/           
+          packer fmt -check ./packer/builld-image.pkr.hcl 
+        continue-on-error: false
+
+      - name: Run packer validate
+        run: packer validate -var-file=./packer/variables.pkrvars.hcl ./packer/

@@ -9,3 +9,5 @@ terraform.tfstate
 dev.tfvars
 bg.sh
 terraform.tfvars
+node_modules
+.terraform
