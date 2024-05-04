@@ -1,0 +1,11 @@
+.DS_Store
+.terraform.lock.hcl
+terraform.tfstate.backup
+.terraform/providers/registry.terraform.io/hashicorp/google/5.24.0/darwin_arm64/terraform-provider-google_v5.24.0_x5
+.terraform/providers/registry.terraform.io/hashicorp/google-beta/5.27.0/darwin_arm64/LICENSE
+.terraform/providers/registry.terraform.io/hashicorp/google-beta/5.27.0/darwin_arm64/terraform-provider-google-beta_v5.27.0_x5
+.terraform/providers/registry.terraform.io/hashicorp/random/3.6.1/darwin_arm64/terraform-provider-random_v3.6.1_x5
+terraform.tfstate
+dev.tfvars
+bg.sh
+terraform.tfvars
