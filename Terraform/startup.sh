@@ -44,7 +44,7 @@
     sudo npm install -g prisma
     sudo npx prisma generate
     sudo npx prisma db push
-    sudo chown -R csye6225:csye6225 /opt/webapp
+    sudo chown -R webapp:webapp /opt/webapp
     sudo chmod -R 700 /opt/webapp
     
 

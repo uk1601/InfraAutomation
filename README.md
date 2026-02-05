@@ -1,156 +1,267 @@
-# InfraAutomation
+# Cloud-Native Web Application with Infrastructure Automation
 
-## Overview
+<div align="center">
 
-A scalable, cloud-native web application on **Google Cloud Platform (GCP)**. It uses **Infrastructure as Code (Terraform)**, a custom machine image (**Packer**), a **Node.js/TypeScript** REST API with **Prisma** and **MySQL**, and **event-driven** email verification via **Pub/Sub** and **Cloud Functions**. The system covers networking, compute, database, load balancing, CI/CD, and observability.
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green?style=flat&logo=node.js)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
+[![Google Cloud](https://img.shields.io/badge/Google_Cloud-GCP-blue?style=flat&logo=google-cloud)](https://cloud.google.com/)
+[![Terraform](https://img.shields.io/badge/Terraform-1.5+-purple?style=flat&logo=terraform)](https://www.terraform.io/)
+[![Packer](https://img.shields.io/badge/Packer-1.9+-blue?style=flat&logo=packer)](https://www.packer.io/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-black?style=flat&logo=prisma)](https://www.prisma.io/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-orange?style=flat&logo=mysql)](https://www.mysql.com/)
+
+</div>
+
+---
+
+## Abstract
+
+This project demonstrates a scalable, automated cloud infrastructure built on Google Cloud Platform (GCP). It leverages cloud-native concepts to deploy a RESTful API with automated infrastructure provisioning using Terraform and custom machine images built with Packer. The architecture prioritizes reliability, security, and automation, incorporating event-driven processing, managed database services, and continuous integration pipelines.
 
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Repository Structure](#repository-structure)
-3. [High-Level Flows](#high-level-flows)
-4. [Web Application](#web-application)
-5. [Infrastructure (Terraform)](#infrastructure-terraform)
-6. [Custom Machine Image (Packer)](#custom-machine-image-packer)
-7. [Event-Driven Email Verification](#event-driven-email-verification)
-8. [Load Balancing and Autoscaling](#load-balancing-and-autoscaling)
-9. [CI/CD Pipelines](#cicd-pipelines)
-10. [Security and Operations](#security-and-operations)
-11. [License](#license)
+-   [Architecture and Design](#architecture-and-design)
+-   [Web Application](#web-application)
+-   [Infrastructure as Code](#infrastructure-as-code)
+-   [Google Cloud Platform Networking](#google-cloud-platform-networking)
+-   [Custom Machine Image](#custom-machine-image)
+-   [Database Configuration](#database-configuration)
+-   [Monitoring and Logging](#monitoring-and-logging)
+-   [Event-Driven Architecture](#event-driven-architecture)
+-   [Load Balancing and Autoscaling](#load-balancing-and-autoscaling)
+-   [Security and Encryption](#security-and-encryption)
+-   [Continuous Deployment](#continuous-deployment)
+-   [Getting Started / Usage](#getting-started--usage)
 
----
+## Architecture and Design
 
-## Architecture Overview
+The project adopts a cloud-native architecture, emphasizing modularity and scalability.
 
-- **API**: REST API (Express + TypeScript) for user management and health checks.
-- **Data**: MySQL (GCP Cloud SQL) with private IP; access via VPC.
-- **Compute**: GCE instances from a **custom Packer image**, running behind an **external Application Load Balancer** with a **Managed Instance Group** and autoscaling.
-- **Events**: User signup triggers a **Pub/Sub** message; a **Cloud Function** sends a verification email (Mailgun) and writes to a **MailLog** table.
-- **DNS**: Cloud DNS A record for the app; MX/TXT/CNAME for Mailgun (email domain).
-- **IaC**: Terraform for VPC, subnets, firewall, Cloud SQL, Pub/Sub, Cloud Function, VPC connector, load balancer, health checks, instance template, MIG, autoscaler, DNS, and service accounts.
-
----
-
-## Repository Structure
-
+```mermaid
+graph TD
+    User([User]) -->|HTTPS| LB[Load Balancer]
+    LB -->|Traffic| VM[Compute Engine VM <br> Webapp]
+    
+    subgraph GCP [Google Cloud Platform]
+        VM -->|Read/Write| SQL[(Cloud SQL <br> MySQL)]
+        VM -->|Publish Event| PubSub[Cloud Pub/Sub <br> 'verify_email']
+        
+        PubSub -->|Trigger| CF[Cloud Function <br> 'verify-email']
+        CF -->|Send Email| MG[Mailgun API]
+        CF -->|Log Status| SQL
+    end
+    
+    MG -->|Verification Link| User
 ```
-InfraAutomation/
-├── README.md                 # This file
-├── Terraform/                # GCP infrastructure (VPC, Cloud SQL, LB, MIG, etc.)
-├── Webapp/                   # Node.js/TypeScript API and Packer image
-└── CloudFunction/            # Pub/Sub-triggered verification email function
-```
 
-- **Terraform**: All GCP resources (networking, database, Pub/Sub, function, load balancer, MIG, DNS, IAM).
-- **Webapp**: Express app, Prisma schema, routes, services, middleware, tests, Packer HCL, and scripts (setup, systemd, Ops Agent).
-- **CloudFunction**: Node.js function triggered by `verify_email` Pub/Sub topic; sends email and logs to MySQL.
-
----
-
-## High-Level Flows
-
-### 1. Request flow (user-facing traffic)
-
-1. Client → **HTTPS (443)** → Global forwarding rule (static IP).
-2. **Target HTTPS proxy** (with managed SSL cert) → **URL map** → **Backend service**.
-3. Backend service → **HTTP (3000)** to instances in the MIG (tagged `allow-lb`).
-4. **Health check** (`/healthz` on port 3000) determines instance health; unhealthy instances are recreated.
-5. App on each VM connects to **Cloud SQL** via **private IP** (same VPC).
-
-### 2. User signup and email verification flow
-
-1. Client **POST /v1/user** (username, password, first_name, last_name).
-2. **Validation** (email format, required fields) → **UserService** creates user in DB (bcrypt password), then **publishes** to Pub/Sub topic `verify_email` with `{ email, userId }`.
-3. **Cloud Function** (triggered by `verify_email`) receives message, calls **Mailgun** to send verification email with link `{verification_link_base_url}/verification?token={userId}`.
-4. Function connects to Cloud SQL (via VPC connector) and **inserts** into **MailLog** (email, userId, verificationLink, status, errorMessage).
-5. User clicks link → **GET /verification?token=...** → **UserService.verifyUserAccount** checks user exists, checks MailLog and 2-minute window, then sets **users.isVerified = true**.
-
-### 3. Deployment and image flow
-
-1. **Webapp**: On merge to `main`, CI runs tests, builds app, zips artifact, builds **Packer image** (from base image + app zip + setup scripts + Ops Agent + systemd). Image family: `node-mysql-app-family`.
-2. **Terraform** (or separate pipeline) uses `data.google_compute_image` (latest from that family) in **instance template**; **MIG** uses that template. New instances run **startup script** that reads DB credentials from metadata, writes `.env`, runs Prisma generate/push, starts **webapp.service**.
-3. **Cloud Function** code is zipped and uploaded to GCS; Terraform deploys the function with event trigger on `verify_email` and env vars (DB, Mailgun, base URL).
-
----
+Key components include:
+*   **Microservices**: Decoupled components for user management (Webapp) and background processing (Cloud Function).
+*   **RESTful API**: Built with Node.js, TypeScript, and Prisma, ensuring robust and strictly typed endpoints.
+*   **Infrastructure as Code (IaC)**: Entirely managed using Terraform for consistent and repeatable deployments.
 
 ## Web Application
 
-- **Stack**: Node.js 18, TypeScript, Express, Prisma (MySQL), bcrypt, JWT (for token generation), Winston (logging), class-validator (validation).
-- **Endpoints**:
-  - **GET /healthz**: Health check; no body/query; returns 200 if DB connection succeeds, 503 otherwise; 400 for invalid request.
-  - **POST /v1/user**: Create user (validation middleware); returns 201 + user payload (no password); publishes to Pub/Sub.
-  - **GET /v1/user/self**: Get current user (Basic auth); requires verified account.
-  - **PUT /v1/user/self**: Update user (Basic auth); username immutable; requires verified account.
-  - **GET /verification?token=...**: Verify account using token (userId); 2-minute window from MailLog.sentAt.
-- **Auth**: Basic auth (username/password); auth middleware loads user from DB and compares password with bcrypt.
-- **Data**: Prisma schema defines **User** (id, username, firstName, lastName, password, isVerified, accountCreated, accountUpdated) and **MailLog** (email, userId, verificationLink, sentAt, status, errorMessage). App uses **DATABASE_URL** from `.env` (built at VM startup from instance metadata).
+A cloud-native RESTful API designed for user management and health checks, implemented with:
 
----
+*   **Node.js & TypeScript**: Ensuring type safety and modern JavaScript features.
+*   **Prisma ORM**: Efficiently interacting with the MySQL database.
+*   **Basic Authentication**: Securely accessing endpoints using hashed passwords (Bcrypt) and tokens (JWT).
+*   **Integration Tests**: Comprehensive testing suite (Jest/Supertest) ensuring endpoint functionality.
 
-## Infrastructure (Terraform)
+## Infrastructure as Code
 
-- **Provider**: `hashicorp/google` ~> 5.24; config in `provider.tf`; variables in `variables.tf`.
-- **main.tf**: VPC (no auto subnets), subnets (from `var.subnets`), default internet route, firewall (app port + 22; source: LB IP ranges + health check IPs; target tag `webapp`), data source for latest custom image (`var.image_family`), Service Networking API, private IP allocation, **private VPC peering** for Cloud SQL.
-- **cloudsql.tf**: Cloud SQL MySQL 5.7 instance (private IP only), database `webapp`, user `webapp`, random password; disk/settings/backup as per variables.
-- **loadbalencer.tf**: Static IP, firewall for LB → instances (ports 3000, 8443, 22; target tag `allow-lb`), backend service (HTTP, health check, MIG), managed SSL cert (domain from `var.dns_record_name`), HTTPS proxy, global forwarding rule (443).
-- **autoscaler.tf**: Instance template (custom image, metadata with db_user/db_password/db_host, startup script from `startup.sh`, service account with logging/monitoring/pubsub), health check (HTTP `/healthz` on 3000), MIG with template and auto-healing, autoscaler (CPU target, min/max replicas).
-- **dns.tf**: A record for app → LB IP; MX, TXT, DKIM, CNAME for Mailgun domain (e.g. `udaykirandasari.me`).
-- **event.tf**: Pub/Sub topic `verify_email`, VPC access connector for Cloud Function, Cloud Function (Node 20, triggered by topic, env: DB credentials, Mailgun, verification base URL, API key).
-- **serviceAccounts.tf**: Ops Agent service account with roles: logging.admin, pubsub.publisher, monitoring.metricWriter.
-- **keyRing.tf**: Commented-out KMS/CMEK (optional for Cloud SQL and VM disk encryption).
-- **startup.sh** (Terraform): Used as instance metadata startup script; reads db_user/db_password/db_host from metadata, writes `/opt/webapp/.env` and profile script, runs prisma generate + db push, enables/starts `webapp.service`.
+Terraform scripts automate the provisioning of GCP resources:
 
----
+*   **VPC and Subnets**: Custom Virtual Private Cloud for network isolation.
+*   **Cloud SQL**: Private MySQL instance for secure data storage.
+*   **IAM Roles**: Least-privilege access management for Service Accounts and Cloud Functions.
+*   **Compute Engine**: Managed Instance Groups for the application layer.
 
-## Custom Machine Image (Packer)
+## Google Cloud Platform Networking
 
-- **File**: `Webapp/packer/builld-image.pkr.hcl`.
-- **Source**: GCE image (e.g. CentOS) from variables; outputs image in family **node-mysql-app-family**.
-- **Build**: Copies `webapp.zip` to VM; runs `scripts/setup.sh` (Ops Agent, zip, unzip app, Node 18, npm install) and `scripts/serviceSetup.sh` (user `csye6225`, systemd unit, Ops Agent config, timezone).
-- **Result**: Image has app at `/opt/webapp`, systemd unit `webapp.service` (runs `node dist/src/index.js` after `.env` exists), Ops Agent reading `/var/log/myapp/application.log`. At boot, Terraform’s **startup.sh** injects DB config and runs Prisma; then systemd starts the app.
+The network setup includes:
 
----
+*   **VPC**: A dedicated VPC prevents access from the default network.
+*   **Firewall Rules**: Strictly defined rules allowing only necessary traffic (e.g., Load Balancer to Webapp on application ports).
+*   **Private Service Access**: Private connection between the VPC and Cloud SQL instance.
 
-## Event-Driven Email Verification
+## Custom Machine Image
 
-- **Topic**: `verify_email` (Terraform).
-- **Publisher**: Webapp `UserService` after creating user; payload `{ email, userId }`.
-- **Subscriber**: Cloud Function `helloPubSub` (Node 20); decodes message, builds verification URL, sends email via Mailgun, then connects to Cloud SQL (same VPC via connector) and inserts into **MailLog**. Function env: db_* from Terraform (Cloud SQL user/password/private IP), Mailgun URL, API key, from address, verification base URL.
+Custom CentOS Stream 8 image created using HashiCorp Packer:
 
----
+*   **Pre-installed Dependencies**: Node.js, Ops Agent, and application artifacts are baked into the image.
+*   **Systemd Service**: Configures the Webapp to start automatically on boot.
+*   **Reproducibility**: Packer templates ensure every deployed instance is identical.
+
+## Database Configuration
+
+Configured with Terraform and Prisma:
+
+*   **Cloud SQL**: High-availability MySQL instance.
+*   **Private IP**: The database is accessible only within the VPC, enhancing security.
+*   **Dynamic Configuration**: Startup scripts fetch metadata to generate the `.env` file with database credentials dynamically.
+
+## Monitoring and Logging
+
+Ensures application health and performance:
+
+*   **Google Cloud Ops Agent**: Installed on VMs to collect system metrics and application logs.
+*   **Winston Logger**: Structured logging within the Node.js application for easier analysis in Cloud Logging.
+
+## Event-Driven Architecture
+
+Utilizes Google Cloud Pub/Sub and Cloud Functions for asynchronous processing:
+
+*   **Publisher**: The Webapp publishes a message to the `verify_email` topic upon new user registration.
+*   **Subscriber**: A Serverless Cloud Function triggers on the message to send a verification email via Mailgun.
 
 ## Load Balancing and Autoscaling
 
-- **External Application Load Balancer**: Global static IP → HTTPS (443) → backend service → MIG instances (port 3000).
-- **Health check**: HTTP GET `/healthz` every 25s; unhealthy threshold 2; auto-healing replaces bad instances.
-- **Autoscaler**: CPU-based (e.g. target 5%), min/max replicas, cooldown.
-- **Instance template**: Custom image, metadata and startup script for DB and Prisma; tagged `webapp` and `allow-lb`.
+Handles traffic efficiently and scales based on demand:
 
----
+*   **Instance Template**: Defines the VM configuration based on the custom Packer image.
+*   **Managed Instance Group (MIG)**: Automatically scales the number of instances based on CPU utilization.
+*   **Global Load Balancer**: Distributes incoming HTTP(S) traffic across available instances in the MIG.
+*   **SSL Certificates**: Managed Google-managed SSL certificates for secure HTTPS communication.
 
-## CI/CD Pipelines
+## Security and Encryption
 
-- **Webapp**
-  - **Node.js CI** (PR to main): Install, build (no tests in snippet; can be extended).
-  - **Integration tests** (PR): MySQL service, Prisma, `DATABASE_URL` secret, `npm test`.
-  - **Packer validate** (PR): Packer init, fmt check, validate with variables from secrets.
-  - **Packer build** (PR closed + merged): Integration tests, build, zip, auth to GCP, Packer build; produces new image in family.
-  - **Instance group** (PR closed): GCP auth, run `scripts/gcloud.sh` to create/update instance template and MIG rolling update (uses secrets for DB, SA, region, etc.).
-- **CloudFunction**
-  - **Deploy to GCS** (push to main): Zip code, upload to GCS bucket (bucket name and credentials via secrets). Terraform deploys the function from that object.
+Enhances data protection:
 
----
+*   **SSL/TLS**: All external communication is secured via HTTPS.
+*   **Private Network**: Database and internal components are isolated from the public internet.
+*   **Secrets Management**: Sensitive data like database passwords are managed via Terraform state and Instance Metadata, not hardcoded.
 
-## Security and Operations
+## Continuous Deployment
 
-- **Network**: App and DB in same VPC; Cloud SQL private IP only; firewall by tags and LB/IP ranges.
-- **Secrets**: DB password from Terraform `random_password`; Mailgun API key and similar in Terraform variables (or secret manager in production).
-- **IAM**: Dedicated service account for Ops Agent (logging, monitoring, pubsub); instance template uses this SA.
-- **Logging**: Winston to `/var/log/myapp/application.log`; Ops Agent (config in `scripts/ops-agent-config.yaml`) parses JSON and sends to Cloud Logging.
-- **Optional**: keyRing.tf has commented CMEK for Cloud SQL and VM disks; can be enabled and variables set.
+Automates updates and integration:
 
----
+*   **GitHub Actions**: Pipelines for running tests, checking headers, and building Packer images.
+*   **Integration Testing**: Automated tests run on every pull request to ensure code quality.
+
+## Getting Started / Usage
+
+### Prerequisites
+
+Ensure you have the following tools installed:
+
+*   **Node.js** (v20.x) & **npm**
+*   **Terraform** (v1.5+)
+*   **Packer** (v1.9+)
+*   **Google Cloud SDK** (`gcloud`) configured with your project.
+
+### 💻 Local Development (Webapp)
+
+To run the application locally for development and testing:
+
+1.  **Clone the Repository**
+    ```bash
+    git clone <repository-url>
+    cd InfraAutomation/Webapp
+    ```
+
+2.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
+
+3.  **Configure Environment Variables**
+    Create a `.env` file in the `Webapp` root directory. You can use the following template:
+
+    ```env
+    # Database Configuration
+    DB_HOST=localhost
+    DB_USER=root
+    DB_PASSWORD=your_local_db_password
+    DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:3306/webapp"
+
+    # Pub/Sub Configuration (Optional for local dev unless using emulator)
+    TOPIC_NAME=verify_email
+    ```
+
+4.  **Database Migration**
+    Ensure you have a local MySQL instance running. Run the following to setup the schema:
+    ```bash
+    npx prisma migrate dev --name init
+    ```
+
+5.  **Start the Application**
+    ```bash
+    # Development mode (restarts on file changes)
+    npm run dev
+
+    # Production build
+    npm run build
+    npm start
+    ```
+
+### ☁️ Infrastructure Deployment
+
+This project uses **Packer** to build machine images and **Terraform** to provision infrastructure.
+
+#### 1. Build Custom Machine Image (Packer)
+
+This step creates a Compute Engine image with the application and dependencies pre-installed.
+
+```bash
+cd InfraAutomation/Webapp/packer
+
+# Initialize Packer plugins
+packer init .
+
+# Build the image
+# Replace 'your-project-id' with your actual GCP Project ID
+packer build \
+  -var 'project_id=your-project-id' \
+  -var 'source_image_family=centos-stream-8' \
+  .
+```
+
+#### 2. Provision Infrastructure (Terraform)
+
+Deploy the network, database, and compute resources.
+
+1.  **Navigate to Terraform Directory**
+    ```bash
+    cd ../../Terraform
+    ```
+
+2.  **Initialize Terraform**
+    ```bash
+    terraform init
+    ```
+
+3.  **Create Variables File**
+    Create a `terraform.tfvars` file to define your environment configurations. **Do not commit this file.**
+
+    ```hcl
+    project_id      = "your-project-id"
+    region          = "us-east1"
+    zone            = "us-east1-b"
+    vpc_name        = "my-vpc"
+    
+    # Database
+    db_password     = "secure-password-here"
+    
+    # Mailgun (for email verification)
+    mailgun_api_key = "your-mailgun-api-key"
+    mailgun_url     = "https://api.mailgun.net/v3/your-domain.com/messages"
+    
+    # DNS
+    dns_record_name       = "my-app."
+    dns_managed_zone_name = "my-zone"
+    ```
+
+4.  **Plan and Apply**
+    ```bash
+    # Review changes
+    terraform plan -var-file="terraform.tfvars"
+
+    # Deploy resources
+    terraform apply -var-file="terraform.tfvars"
+    ```
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for details.
+This project is licensed under the ISC License.
+

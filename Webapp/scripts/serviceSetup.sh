@@ -36,15 +36,15 @@ cd /opt/webapp/ || log_and_exit "Failed to change directory to /opt/webapp/"
 log_info "Copying webapp.service to /etc/systemd/system/"
 sudo cp /opt/webapp/scripts/webapp.service /etc/systemd/system/webapp.service || log_error "Failed to copy webapp.service to /etc/systemd/system"
 
-echo "Creating user and group csye6225..."
-sudo groupadd -f csye6225 && \
-sudo useradd -r -g csye6225 -s /usr/sbin/nologin csye6225 && \
-sudo chown -R csye6225:csye6225 /opt/webapp && \
+echo "Creating user and group webapp..."
+sudo groupadd -f webapp && \
+sudo useradd -r -g webapp -s /usr/sbin/nologin webapp && \
+sudo chown -R webapp:webapp /opt/webapp && \
 sudo chmod -R 700 /opt/webapp || log_error "Failed to create user/group or set permissions"
 
 log_info "Setting up /var/log/myapp"
 sudo mkdir -p /var/log/myapp
-sudo chown csye6225:csye6225 /var/log/myapp
+sudo chown webapp:webapp /var/log/myapp
 
 log_info "Copying Ops Agent config and restarting service"
 sudo mkdir -p /etc/google-cloud-ops-agent

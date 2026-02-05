@@ -12,7 +12,7 @@ resource "google_cloudfunctions2_function" "verify_email_function-main" {
     entry_point = "helloPubSub"
     source {
       storage_source {
-        bucket = "my-cloud-functions-bucket-csye"
+        bucket = "my-cloud-functions-bucket-webapp"
         object = "function.zip"
       }
     }

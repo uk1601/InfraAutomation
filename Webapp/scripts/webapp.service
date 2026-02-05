@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=csye6225
-Group=csye6225
+User=webapp
+Group=webapp
 WorkingDirectory=/opt/webapp
 ExecStartPre=/bin/bash -c 'while [ ! -f /opt/webapp/.env ]; do sleep 1; done'
 ExecStart=node /opt/webapp/dist/src/index.js
@@ -13,7 +13,7 @@ Restart=always
 RestartSec=3
 StandardOutput=null
 StandardError=null
-SyslogIdentifier=csye6225
+SyslogIdentifier=webapp
 
 [Install]
 WantedBy=multi-user.target
