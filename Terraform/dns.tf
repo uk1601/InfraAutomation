@@ -7,7 +7,7 @@ resource "google_dns_record_set" "webapp_a_record" {
 }
 
 resource "google_dns_record_set" "mx-record" {
-  name         = "suryamadhav.me."
+  name         = "udaykirandasari.me."
   type         = "MX"
   ttl          = 1
   managed_zone = var.dns_managed_zone_name
@@ -15,7 +15,7 @@ resource "google_dns_record_set" "mx-record" {
 }
 
 resource "google_dns_record_set" "txt-record" {
-  name         = "suryamadhav.me."
+  name         = "udaykirandasari.me."
   type         = "TXT"
   ttl          = 1
   managed_zone = var.dns_managed_zone_name
@@ -23,7 +23,7 @@ resource "google_dns_record_set" "txt-record" {
 }
 
 resource "google_dns_record_set" "dkim-record" {
-  name         = "krs._domainkey.suryamadhav.me."
+  name         = "krs._domainkey.udaykirandasari.me."
   type         = "TXT"
   ttl          = 1
   managed_zone = var.dns_managed_zone_name
@@ -31,7 +31,7 @@ resource "google_dns_record_set" "dkim-record" {
 }
 
 resource "google_dns_record_set" "email-cname-record" {
-  name         = "email.suryamadhav.me."
+  name         = "email.udaykirandasari.me."
   type         = "CNAME"
   ttl          = 1
   managed_zone = var.dns_managed_zone_name

@@ -19,7 +19,7 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
     var mailData = {
         from: `${process.env.mailgun_from_mail_id}`,
         to: `${email}`,
-        subject: 'CSYE Verification Email ',
+        subject: 'Verification Email',
         text: verificationUrl
     }
     var options = {

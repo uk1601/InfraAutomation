@@ -155,7 +155,7 @@ variable "dns_managed_zone_name" {
 variable "mailgun_from_mail_id" {
   description = "The email ID from which the mail is sent"
   type        = string
-  default = "CSYE User Verification <mailgun@suryamadhav.me>"
+  default = "User Verification <mailgun@udaykirandasari.me>"
 }
 variable "verification_link_base_url" {
   description = "The base URL for the verification link"
